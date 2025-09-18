@@ -1,0 +1,158 @@
+using UnityEngine;
+using InventorySystem.Data;
+using InventorySystem.Domain;
+using Zenject;
+
+public class PlayerVisual : MonoBehaviour
+{
+    // Реализация шаблона Singleton для глобального доступа к экземпляру
+    public static PlayerVisual Instance { get; private set; }
+
+    // Компоненты игрового объекта
+    private SpriteRenderer spriteRenderer;  // Для визуализации спрайта персонажа
+    private Animator animator;             // Для управления анимациями
+    private GameInput gameInput;           // Ссылка на систему ввода
+    private Player player;                 // Ссылка на основной скрипт игрока
+
+    // Константы для имен параметров аниматора
+    private const string IS_ATTACKING = "Attack";
+    private const string IS_RUNNING = "IsRunning";
+    private const string IS_ON_LADDER = "IsOnLadder";
+    private const string KNOCKED_BACK = "IsKnockedBack";
+    private const string IS_TOUCHING_LADDER = "IsTouchingLadder";
+
+    // Состояние персонажа
+    public bool isFacingRight = true;     // Направление взгляда (вправо/влево)
+    private bool isAttacking = false;     // Флаг атаки (чтобы избежать прерывания анимации)
+
+    // Ссылка на оружие (устанавливается в инспекторе Unity)
+    [SerializeField] private Sword sword;
+    [SerializeField] private SpriteRenderer trace;
+
+    // Инициализация при загрузке объекта
+    private void Awake()
+    {
+        // Реализация Singleton паттерна
+        if (Instance != null && Instance != this)
+        {
+            Destroy(this);  // Уничтожаем дубликат
+            return;
+        }
+        Instance = this;
+
+        // Получаем необходимые компоненты
+        spriteRenderer = GetComponent<SpriteRenderer>();
+        if (spriteRenderer == null)
+        {
+            Debug.LogError("SpriteRenderer component not found on PlayerVisual", this);
+        }
+
+        animator = GetComponent<Animator>();
+        if (animator == null)
+        {
+            Debug.LogError("Animator component not found on PlayerVisual", this);
+        }
+    }
+
+    // Инициализация после Awake (когда все объекты загружены)
+    private void Start()
+    {
+        // Получаем ссылки на синглтоны
+        gameInput = GameInput.Instance;
+        if (gameInput == null)
+        {
+            Debug.LogError("GameInput instance is null", this);
+        }
+
+        player = Player.Instance;
+        if (player == null)
+        {
+            Debug.LogError("Player instance is null", this);
+        }
+    }
+
+    // Вызывается каждый кадр
+    private void Update()
+    {
+
+        if (player == null || animator == null) return;
+
+
+        animator.SetBool(KNOCKED_BACK, player.KnockedBack());
+        bool isKnockedBackAnimationPlaying = animator.GetCurrentAnimatorStateInfo(0).IsName("Knocked");
+        if (player.KnockedBack() || isKnockedBackAnimationPlaying) return;
+        animator.SetBool(IS_ON_LADDER, player.IsOnLadder());
+        animator.SetBool(IS_TOUCHING_LADDER, player.IsIdleOnLadder());
+
+
+        // Отключаем анимацию бега, если на лестнице
+        animator.SetBool(IS_RUNNING, player.IsOnLadder() ? false : player.IsRunning());
+
+
+
+        if (gameInput == null) return;
+
+        if (spriteRenderer == null) return;
+
+        if (!player.IsOnLadder())
+        {
+
+            Vector2 moveInput = gameInput.GetMovementVector();
+            // Обработка поворота персонажа в зависимости от направления движения
+            if (moveInput.x < 0)  // Движение влево
+            {
+                spriteRenderer.flipX = true;   // Отражаем спрайт по горизонтали
+
+                isFacingRight = false;
+            }
+            else if (moveInput.x > 0)  // Движение вправо
+            {
+                spriteRenderer.flipX = false;  // Возвращаем нормальную ориентацию
+                isFacingRight = true;
+            }
+        }
+
+
+    }
+
+    // Подписываемся на событие атаки при включении объекта
+    private void OnEnable()
+    {
+        if (GameInput.Instance != null)
+        {
+            GameInput.Instance.OnPlayerAttack += HandleAttack;
+        }
+    }
+
+    // Отписываемся от события атаки при выключении объекта
+    private void OnDisable()
+    {
+        if (GameInput.Instance != null)
+        {
+            GameInput.Instance.OnPlayerAttack -= HandleAttack;
+        }
+    }
+
+    // Обработчик события атаки
+    private void HandleAttack(object sender, System.EventArgs e)
+    {
+        // Запускаем атаку только если не атакуем в данный момент и есть аниматор
+        if (!isAttacking && animator != null)
+        {
+            StartCoroutine(Attack());
+        }
+    }
+
+    // Корутина для обработки анимации атаки
+    private System.Collections.IEnumerator Attack()
+    {
+        isAttacking = true;
+        animator.SetBool(IS_ATTACKING, true);  // Запускаем анимацию атаки
+
+        yield return new WaitForSeconds(0.5f);  // Ждем окончания анимации
+
+        animator.SetBool(IS_ATTACKING, false);  // Останавливаем анимацию атаки
+        isAttacking = false;
+    }
+
+}
